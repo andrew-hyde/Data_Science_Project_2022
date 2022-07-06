@@ -1,0 +1,412 @@
+---
+output:
+  md_document:
+    variant: markdown_github
+---
+
+# Purpose
+
+Purpose of this work folder.
+
+Ideally store a minimum working example data set in data folder.
+
+Add binary files in bin, and closed R functions in code. Human Readable settings files (e.g. csv) should be placed in settings/
+
+
+```{r message=FALSE, warning=FALSE}
+
+rm(list = ls()) # Clean your environment:
+gc() # garbage collection - It can be useful to call gc after a large object has been removed, as this may prompt R to return memory to the operating system.
+
+library(readr)
+# import data
+car_df_data <- read_csv("data/Car details v3.csv", show_col_types = FALSE)
+
+library(tidyverse)
+# LOAD FUNCTIONS
+list.files('code/', full.names = T, recursive = T) %>% 
+    .[grepl('.R', .)] %>% as.list() %>% 
+    walk(~source(.))
+
+# IMPORT DATA
+cleaned_car_data <- clean_data(df_data)
+
+#load packages
+library(pacman)
+pacman::p_load(dplyr, ggplot2, rsample, caret)
+
+
+```
+
+# Data Exploration
+This section explores the characteristics of the data and the relationships of the features within the data. This is a very important and necessary step that will inform modeling process.
+
+```{r}
+
+head(car_df_data <- read_csv("data/Car details v3.csv", show_col_types = FALSE))
+
+```
+
+
+```{r}
+# Graph of Number of Used Cars by Brands
+graph_2.0_func(df_data = car_data_2.0,
+               title = "Number of Used Cars",
+               subtitle = "by Brand",
+               caption = " ",
+               xlabel = "Brands",
+               ylabel = "Number of Cars")
+```
+
+
+## Target Variable: Prices
+
+We begin our data exploration by inspecting the distribution of our target variable, the selling price of used cars. From the two graphs below, titled 'Histogram of Selling Price of Used Cars', we can see that only once the selling price data goes through a natural logarithm transformation does the distribution of selling prices represent a more normal distribution. This transformation will minimize the skewness of the target variable and thus errors in predicting used car prices will be more equally distributed when dealing with outliers in the tails of the distribution.
+
+
+```{r}
+
+# Non Log Transformed
+graph_2.2_func(df_data = car_data_2.2,
+                 title = "Histogram of Selling Price of Used Cars",
+                 subtitle = "Non Log Transformed (Levels)",
+                 caption = " ",
+                 xlabel = "Selling Price",
+                 ylabel = "")
+
+# Log Transformed
+graph_2.1_func(df_data = car_data_2.1,
+                 title = "Histogram of Selling Price of Used Cars",
+                 subtitle = "Log Transformed",
+                 caption = " ",
+                 xlabel = "Selling Price",
+                 ylabel = "")
+
+
+```
+
+In line with above transformation, the remain numeric variables are transformed with the natural logarithm. Graphs of these transformations are displayed below. 
+
+## Numeric Explanatory Features
+```{r message=FALSE, warning=FALSE}
+graph_2.4_func(df_data = car_data_2.4,
+               title = "Histogram of Numeric Explanatory Features ",
+               subtitle = "Log Transformed",
+               caption = " ",
+               xlabel = "",
+               ylabel = "")
+
+
+```
+
+
+## Binary Feature: Fuel Types
+
+From the bar graph on the number of used cars by fuel type, one can see that used cars from this data set predominantly have diesel or petrol engines. Given that there are very few cars making use of fuel types 'LPG' ABD 'CNG', observations with these fuel types are removed. This allows for a comparison between the prices of used cars will diesel and petrol engines. The rhetoric is that diesel engines are more expensive than petrol engines (expand and reference this).
+
+```{r}
+
+graph_2.3_func(df_data = car_data_2.3,
+               title = "Bar Graph of Fuel Types of Used Cars",
+               subtitle = "",
+               caption = " ",
+               xlabel = "Fuel Type",
+               ylabel = "No. of Used Cars")
+
+
+
+```
+
+## Binary Feature: Seller Types
+
+The graph below presents the number of cars by seller type, there are three seller types 'Individual', 'Dealer' and 'Trustmark Dealer'. For the purposes of this study 'Dealer' and 'Trustmark Dealer' are combine and renamed as 'Dealership', this is done as the intuition is that prices of used cars will be higher when sold at dealerships when compared to individuals selling there own vehicle, this is likely due to the fact that dealerships have operational costs that they must recoup through marking up the selling price.
+```{r message=FALSE, warning=FALSE}
+
+graph_2.5_func(df_data = car_data_2.5,
+               title = "Bar Graph of Seller Types of Used Cars",
+               subtitle = "",
+               caption = " ",
+               xlabel = "Seller Types",
+               ylabel = "No. of Used Cars")
+
+# seller_type_table <- car_df_data %>%
+#     mutate(seller = ifelse(seller_type=="Individual", "Individual", "Dealership")) %>%
+#     dplyr::select(seller) %>%
+#     na.omit() %>% count(seller)
+
+knitr::kable(x = bind_rows(
+    data.frame(Seller = "Dealership" , Percentage = (1362/8128)*100),
+    data.frame(Seller = "Individual" , Percentage = (6766/8128)*100)), digits = round(1) , align = "c", caption = "Percentage of Seller Type")
+
+```
+
+## Binary Features: Transmission
+
+Used cars in this data set of have an automatic or manual transmission. Considering that automatic cars are considered more expensive given that the more complex electronic transmission system. In the data set, there are significantly more used cars with manual transmissions than with automatic transmissions. This comes as no surprise as there are more manual cars being driven. From the graph below, one can see that the average selling price of automatic transmission cars far exceeds the average selling price of manual transmission vehicles in the data set, a possible reason for this is that most luxury cars and sports cars make use of automatic transmissions. 
+```{r}
+
+# The industry wisdom is that automatic cars more expensive than manaul
+
+# Number of Used Cars by Transmission
+knitr::kable(car_df_data %>%
+        mutate(price = log(selling_price)) %>%
+        dplyr::select(transmission) %>%
+        count(transmission) %>% 
+        na.omit(), format = "simple", col.names = c("Transmission", "No. of Cars") , caption = "Number of Used Cars by Transmission", longtable = T)
+
+
+graph_2.6_func(df_data = car_data_2.6,
+               title = "Average Price of Cars",
+               subtitle = "by Transmission",
+               caption = " ",
+               xlabel = "Transmission Type",
+               ylabel = "Price")
+
+```
+
+but not all cars are the same age
+```{r}
+graph_2.7_func(df_data = car_data_2.7,
+               title = "Average Price of Cars",
+               subtitle = "by Brand",
+               caption = " ",
+               xlabel = "Transmission Type",
+               ylabel = "Price")
+```
+
+
+## Binary Features: Owner
+
+```{r}
+
+graph_2.9_func(df_data = car_data_2.9,
+               title = "Average Price of Cars",
+               subtitle = "by Transmission",
+               caption = " ",
+               xlabel = "Transmission Type",
+               ylabel = "Price")
+
+
+```
+
+## Feature Filtering
+```{r}
+caret::nearZeroVar(data_train, saveMetrics = TRUE) %>% 
+    tibble::rownames_to_column() %>% 
+    filter(nzv)
+```
+
+
+## Cleaning the Data
+
+All numeric features or variables (price, km_driven, age, engine, max_power, engine, seats) has gone through a natural logarithm transformation. The variable 'age' has been constructed using the year the car was built. The variable 'mileage' has been manipulated and the units of measurement (kmpl or km/kg) has been removed from each observation. The variable 'engine' has been manipulated and the units of measurement (CC) has been removed from each observation. The variable 'max_power' has been manipulated and the units of measurement (bhp) has been removed from each observation. For the variable 'petrol', the a dummy variable has been created after observations with LPG and CNG fuel types. For the variable 'individual', observations with seller type 'Dealer' and 'Trustmark Dealer' are combined and a dummy variable is created. For the variable 'automatic', a dummy variable is create for observations with automatic transmissions. Lastly, empty observations (NA) or observations with '-Inf'. Before cleaning the data, the raw data set has 8128 observations and after cleaning there are 7802 observations.
+
+*selling_price*, the price the car is being sold for (log transformed).
+
+*km_driven*, the number of Kilometers the car has been driven (log transformed).
+
+*age*, the age of the car at time of sale (log transformed).
+
+*engine*, size of the engine in cubic centimeters (CC) (log transformed).
+
+*max_power*, maximum engine power in brake horsepower (bhp) (log transformed).
+
+*mileage*, mileage or fuel consumption of the car (kmpl or km/kg) (log transformed).
+
+*seats*, number of seats in the car (log transformed).
+
+*petrol*, 1 if fuel type of car is petrol, 0 if diesel (dummy variable).
+
+*individual*, 1 if the seller is an individual, 0 if seller is a dealership (dummy variable).
+
+*automatic*, 1 if the car is an automatic, 0 if manual (dummy variable).
+
+*Owner*, set of dummy variables for number of previous owners of the car (First Owner/Second Owner/ Third Owner/Fourth & Above Owner/Test Drive Car).
+
+
+# Modeling
+The modeling process begins with split the data that is to be used in modeling process into training and testing data sets. The graph below displays the distributions 
+```{r}
+
+
+library(tidyverse)
+# LOAD FUNCTIONS
+list.files('code/', full.names = T, recursive = T) %>% 
+    .[grepl('.R', .)] %>% as.list() %>% 
+    walk(~source(.))
+
+# IMPORT DATA
+cleaned_car_data <- clean_data(df_data)
+
+# SPLIT DATA
+# set seed for reproducibility
+set.seed(123)
+library(rsample)
+# split data 80:20, training and test set
+
+#Test set 
+data_test <- testing(rsample::initial_split(cleaned_car_data, prop = 0.8, strata = "price"))
+#Training set 
+data_train <- training(rsample::initial_split(cleaned_car_data, prop = 0.8, strata = "price"))
+
+# Density plot of price for the training and test sets
+graph_3.0_func(df_data = car_data_3.0,
+               title = "Distribution of log Price of Used Cars",
+               subtitle = "Test vs Training Data set",
+               caption = "",
+               xlabel = "log Selling Price",
+               ylabel = "")
+
+
+```
+
+
+## Linear Regression
+
+```{r message=FALSE, warning=FALSE}
+# Simple Linear Regression 
+model_1 <- lm(price ~ km_driven, data_train)
+
+model_2 <- lm(price ~ km_driven + age, data_train)
+
+model_3 <- lm(price ~ km_driven + age + engine, data_train)
+
+model_4 <- lm(price ~ km_driven + age + engine + mileage, data_train)
+
+model_5 <- lm(price ~ km_driven + age + engine + mileage + max_power, data_train)
+
+model_6 <- lm(price ~ km_driven + age + engine + max_power + engine, data_train)
+
+model_7 <- lm(price ~ km_driven + age + engine + max_power + engine + seats, data_train)
+
+model_8 <- lm(price ~ km_driven + age + engine + max_power + engine + seats + petrol, data_train)
+
+model_9 <- lm(price ~ km_driven + age + engine + max_power + engine + seats + petrol + dealership, data_train)
+
+model_9 <- lm(price ~ km_driven + age + engine + max_power + engine + seats + petrol + dealership + automatic, data_train)
+
+model_10 <- lm(price ~ ., data_train)
+huxreg(model_10)
+
+library(huxtable)
+huxreg(model_1, model_2, model_3, model_4, model_5, model_6, model_7, model_8, model_9)
+
+install.packages("Metrics")
+library(Metrics)
+#   rmse(model_9)
+bind_rows(
+    data.frame(Model = 1, MSE = mean(model_1$residuals^2)),
+    data.frame(Model = 2, MSE = mean(model_2$residuals^2)),
+    data.frame(Model = 3, MSE = mean(model_3$residuals^2)),
+    data.frame(Model = 4, MSE = mean(model_4$residuals^2)),
+    data.frame(Model = 5, MSE = mean(model_5$residuals^2)),
+    data.frame(Model = 6, MSE = mean(model_6$residuals^2)),
+    data.frame(Model = 7, MSE = mean(model_7$residuals^2)),
+    data.frame(Model = 8, MSE = mean(model_8$residuals^2)),
+    data.frame(Model = 10, MSE = mean(model_9$residuals^2)))
+
+
+
+library(caret)
+
+# set seed for reproducibility
+set.seed(123)
+
+# Tune a knn model using grid search
+lm_fit <- train(price ~ ., 
+  data = data_train, 
+  method = "lm", 
+  trControl = cv <- trainControl(method = "repeatedcv", number = 10, repeats = 5), 
+  tuneGrid = expand.grid(k = seq(2, 25, by = 1)),
+  metric = "RMSE")
+
+# 
+knn_fit
+ggplot(knn_fit)
+```
+
+Upon examining the results of Models 1-7, the addition the explanatory variable 'number of seats' in Model 7 does not change the reported coefficients on the other explanatory variables significantly, when compared to Model 6. Comparing Model 5 and Model 6, the coefficients of the explanatory variables do change significantly with the addition of the dummy variable 'dealership'. When looking at the coefficient on the explanatory variable 'mileage' across all 7 models, one can observe the value change as explanatory varietals are added to the model. In Model 1, the coefficient on 'mileage' appears to be suffering from omitted variable bias, capturing the effects of other variables in the error term and thus biasing this effect of 'mileage' downwards. When consulting the r squared values returned from Models 1-7, the value increases for each additional explanatory value controlled for in the model. The r squared values of Models 5, 6 and 7, are not significantly different from each other.
+
+For these reasons the model that provides a satisfactory level of explanation with the fewest number of variables included in the linear regression is Model 5.
+
+## K-Nearest Neighbors Model
+```{r}
+
+library(caret)
+
+# set seed for reproducibility
+set.seed(123)
+
+# Tune a knn model using grid search
+knn_fit <- train(price ~ ., 
+  data = data_train, 
+  method = "knn", 
+  trControl = cv <- trainControl(method = "repeatedcv", number = 10, repeats = 5), 
+  tuneGrid = expand.grid(k = seq(2, 25, by = 1)),
+  metric = "RMSE")
+
+# 
+knn_fit
+ggplot(knn_fit)
+
+# K = 4, RMSE = 0.2937813, R^2 = 0.8749051, MAE = 0.2081363
+
+```
+
+```{r}
+# Decision Tree
+library(pacman)
+p_load(rpart.plot, rpart)
+library(rpart)
+library(rpart.plot)
+
+
+# set seed for reproducibility
+set.seed(123)
+
+
+tree_model <- rpart(
+    formula = price ~ mileage + year + engine + automatic + petrol,
+    data = data_train,
+    method = "anova")
+rpart.plot(tree_model)
+
+
+# train bagged model
+ames_bag1 <- bagging(
+  formula = price ~ .,
+  data = data_train,
+  nbagg = 100,  
+  coob = TRUE,
+  control = rpart.control(minsplit = 2, cp = 0)
+)
+
+ames_bag1
+
+```
+
+
+```{r}
+
+pacman::p_load(vip, pdp, doParallel, foreach, 
+               ipred, ranger, gbm, xgboost)
+# create data
+set.seed(1112)  # for reproducibility
+df <- tibble::tibble(
+  x = seq(from = 0, to = 2 * pi, length = 500),
+  y = sin(x) + rnorm(length(x), sd = 0.5),
+  truth = sin(x)
+)
+# run decision stump model
+ctrl <- list(cp = 0, minbucket = 5, maxdepth = 5)
+fit <- rpart(y ~ x, data = df, control = ctrl)
+
+rpart.plot(ctrl)
+rpart.plot(fit)
+
+
+```
+
+
+
+
