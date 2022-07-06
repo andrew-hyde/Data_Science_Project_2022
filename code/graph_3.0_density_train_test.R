@@ -11,23 +11,36 @@ cleaned_car_data <- clean_data(df_data)
 # set seed for reproducibility
 set.seed(123)
 library(rsample)
-# split data 70:30, training and test set
 
+#-------------------------------------------------------------------------------
+# split data 70:30, training and test set
 #Test set
 data_test <- testing(rsample::initial_split(cleaned_car_data, prop = 0.8, strata = "price"))
 #Training set
 data_train <- training(rsample::initial_split(cleaned_car_data, prop = 0.8, strata = "price"))
+#-------------------------------------------------------------------------------
+# SPLIT DATA: Training and Validation set
+#Validation set
+data_validate <- testing(rsample::initial_split(data_train, prop = 0.8, strata = "price"))
+#Training set
+data_training <- training(rsample::initial_split(data_train, prop = 0.8, strata = "price"))
+#-------------------------------------------------------------------------------
 
-# Density plot of log price for the training and test sets
+# Density plot of log price for the training, validation and test sets
 library(tidyverse)
 
 
 car_data_3.0 <- bind_rows(
 
-    data_test %>%
+    data_training %>%
     mutate(label = "test") %>%
     dplyr::select(c(label, price)) %>%
     na.omit(),
+
+    data_validate %>%
+        mutate(label = "validate") %>%
+        dplyr::select(c(label, price)) %>%
+        na.omit(),
 
     data_train %>%
     mutate(label = "train") %>%
@@ -39,7 +52,7 @@ car_data_3.0 <- bind_rows(
 
 graph <- car_data_3.0 %>% ggplot() +
 
-        geom_density(aes(x = price, colour = label),  size = 1.5, alpha = 0.5) +
+        geom_density(aes(x = price, colour = label),  size = 0.6, alpha = 0.1) +
 
         theme_bw() +
 

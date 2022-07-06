@@ -33,8 +33,15 @@ cleaned_car_data <- clean_data(df_data)
 
 #load packages
 library(pacman)
-pacman::p_load(dplyr, ggplot2, rsample, caret)
-
+library(recipes)
+library(rsample)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(ipred)
+library(h2o) 
+library(glmnet)
+library(ranger)
 
 ```
 
@@ -90,7 +97,7 @@ In line with above transformation, the remain numeric variables are transformed 
 ## Numeric Explanatory Features
 ```{r message=FALSE, warning=FALSE}
 graph_2.4_func(df_data = car_data_2.4,
-               title = "Histogram of Numeric Explanatory Features ",
+               title = "Histogram of Numeric Explanatory Features",
                subtitle = "Log Transformed",
                caption = " ",
                xlabel = "",
@@ -189,19 +196,70 @@ graph_2.9_func(df_data = car_data_2.9,
 
 ```
 
+## outliers(price and distance)
+
+# Feature and Target Engineering
+
+
+## Standardization 
+
 ## Feature Filtering
+
 ```{r}
-caret::nearZeroVar(data_train, saveMetrics = TRUE) %>% 
-    tibble::rownames_to_column() %>% 
+caret::nearZeroVar(cleaned_car_data, saveMetrics = TRUE) %>% 
+    tibble::rownames_to_column()# %>% 
     filter(nzv)
 ```
+## Dimension Reduction
+```{r}
 
+car_blueprint<- recipe(price ~ ., data = cleaned_car_data) %>%
+  step_center(all_numeric(), -all_outcomes()) %>%
+  step_scale(all_numeric(), -all_outcomes())
+```
+
+
+## Principal Component Analysis
+using h20
+```{r message=FALSE, warning=FALSE}
+
+library(h2o)         # performing dimension reduction
+h2o.no_progress()  # turn off progress bars for brevity
+h2o.init(max_mem_size = "5g")  # connect to H2O instance
+
+# convert data to h2o object
+my_basket.h2o <- as.h2o(cleaned_car_data)
+
+# run PCA
+my_pca <- h2o.prcomp(
+  training_frame = my_basket.h2o,
+  pca_method = "GramSVD",
+  k = ncol(2:11), 
+  transform = "STANDARDIZE", 
+  impute_missing = TRUE,
+  max_runtime_secs = 1000
+)
+
+my_pca@model$eigenvectors %>% 
+  as.data.frame() %>% 
+  mutate(feature = row.names(.)) %>%
+  ggplot(aes(pc1, reorder(feature, pc1))) +
+  geom_point()
+
+```
 
 ## Cleaning the Data
 
 All numeric features or variables (price, km_driven, age, engine, max_power, engine, seats) has gone through a natural logarithm transformation. The variable 'age' has been constructed using the year the car was built. The variable 'mileage' has been manipulated and the units of measurement (kmpl or km/kg) has been removed from each observation. The variable 'engine' has been manipulated and the units of measurement (CC) has been removed from each observation. The variable 'max_power' has been manipulated and the units of measurement (bhp) has been removed from each observation. For the variable 'petrol', the a dummy variable has been created after observations with LPG and CNG fuel types. For the variable 'individual', observations with seller type 'Dealer' and 'Trustmark Dealer' are combined and a dummy variable is created. For the variable 'automatic', a dummy variable is create for observations with automatic transmissions. Lastly, empty observations (NA) or observations with '-Inf'. Before cleaning the data, the raw data set has 8128 observations and after cleaning there are 7802 observations.
 
-*selling_price*, the price the car is being sold for (log transformed).
+Skewness
+Transforming all numeric features and the target with the natural logarithm addresses the skewness of the data as the distributions of the numeric variables appear to be more normal than prior to the transformation, this can be seen in the graph titled 'Histogram of Numeric Explanatory Features' and the two graphs titled 'Histogram of Selling Price of Used Cars'.
+
+
+
+Variables
+
+*selling_price*, the price the car is being sold for (target variable) (log transformed).
 
 *km_driven*, the number of Kilometers the car has been driven (log transformed).
 
@@ -224,8 +282,7 @@ All numeric features or variables (price, km_driven, age, engine, max_power, eng
 *Owner*, set of dummy variables for number of previous owners of the car (First Owner/Second Owner/ Third Owner/Fourth & Above Owner/Test Drive Car).
 
 
-# Modeling
-The modeling process begins with split the data that is to be used in modeling process into training and testing data sets. The graph below displays the distributions 
+# Split Dataset
 ```{r}
 
 
@@ -249,6 +306,15 @@ data_test <- testing(rsample::initial_split(cleaned_car_data, prop = 0.8, strata
 #Training set 
 data_train <- training(rsample::initial_split(cleaned_car_data, prop = 0.8, strata = "price"))
 
+#-------------------------------------------------------------------------------
+# SPLIT DATA: Training and Validation set
+#Validation set 
+data_validate <- testing(rsample::initial_split(data_train, prop = 0.8, strata = "price"))
+#Training set 
+data_training <- training(rsample::initial_split(data_train, prop = 0.8, strata = "price"))
+
+#-------------------------------------------------------------------------------
+
 # Density plot of price for the training and test sets
 graph_3.0_func(df_data = car_data_3.0,
                title = "Distribution of log Price of Used Cars",
@@ -261,73 +327,92 @@ graph_3.0_func(df_data = car_data_3.0,
 ```
 
 
+
+
+# Modeling
+The modeling process begins with split the data that is to be used in modeling process into training and testing data sets using stratified sampling so that the target variables of the two samples have similar distributions, ensure a balanced representation and accuracy when predicting prices. The graph below displays the distributions of log selling price for both the test and training set.
+
 ## Linear Regression
 
 ```{r message=FALSE, warning=FALSE}
-# Simple Linear Regression 
-model_1 <- lm(price ~ km_driven, data_train)
+# Simple Linear Regression
+# model 1 to 10
+lm_func_1_to_10(data_training)
 
-model_2 <- lm(price ~ km_driven + age, data_train)
+#  not standardized 
+lm_model_10 <- lm(price ~ ., data_training)
 
-model_3 <- lm(price ~ km_driven + age + engine, data_train)
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
 
-model_4 <- lm(price ~ km_driven + age + engine + mileage, data_train)
+calc_rmse(actual = data_validate$price,
+         predicted = predict(lm_model_10, newdata = data_validate))
 
-model_5 <- lm(price ~ km_driven + age + engine + mileage + max_power, data_train)
+```
+# NEEDS TO CHANGE
+Upon examining the results of Models 1-7, the addition the explanatory variable 'number of seats' in Model 7 does not change the reported coefficients on the other explanatory variables significantly, when compared to Model 6. Comparing Model 5 and Model 6, the coefficients of the explanatory variables do change significantly with the addition of the dummy variable 'dealership'. When looking at the coefficient on the explanatory variable 'mileage' across all 7 models, one can observe the value change as explanatory varietals are added to the model. In Model 1, the coefficient on 'mileage' appears to be suffering from omitted variable bias, capturing the effects of other variables in the error term and thus biasing this effect of 'mileage' downwards. When consulting the r squared values returned from Models 1-7, the value increases for each additional explanatory value controlled for in the model. The r squared values of Models 5, 6 and 7, are not significantly different from each other. For these reasons the model that provides a satisfactory level of explanation with the fewest number of variables included in the linear regression is Model 5.
 
-model_6 <- lm(price ~ km_driven + age + engine + max_power + engine, data_train)
-
-model_7 <- lm(price ~ km_driven + age + engine + max_power + engine + seats, data_train)
-
-model_8 <- lm(price ~ km_driven + age + engine + max_power + engine + seats + petrol, data_train)
-
-model_9 <- lm(price ~ km_driven + age + engine + max_power + engine + seats + petrol + dealership, data_train)
-
-model_9 <- lm(price ~ km_driven + age + engine + max_power + engine + seats + petrol + dealership + automatic, data_train)
-
-model_10 <- lm(price ~ ., data_train)
-huxreg(model_10)
-
-library(huxtable)
-huxreg(model_1, model_2, model_3, model_4, model_5, model_6, model_7, model_8, model_9)
-
-install.packages("Metrics")
-library(Metrics)
-#   rmse(model_9)
-bind_rows(
-    data.frame(Model = 1, MSE = mean(model_1$residuals^2)),
-    data.frame(Model = 2, MSE = mean(model_2$residuals^2)),
-    data.frame(Model = 3, MSE = mean(model_3$residuals^2)),
-    data.frame(Model = 4, MSE = mean(model_4$residuals^2)),
-    data.frame(Model = 5, MSE = mean(model_5$residuals^2)),
-    data.frame(Model = 6, MSE = mean(model_6$residuals^2)),
-    data.frame(Model = 7, MSE = mean(model_7$residuals^2)),
-    data.frame(Model = 8, MSE = mean(model_8$residuals^2)),
-    data.frame(Model = 10, MSE = mean(model_9$residuals^2)))
-
-
-
-library(caret)
+```{r}
 
 # set seed for reproducibility
 set.seed(123)
+# standardized 
+car_standardised <- recipe(price ~ ., data = data_training) %>%
+    step_center(all_numeric(), -all_outcomes()) %>%
+    step_scale(all_numeric(), -all_outcomes())
 
-# Tune a knn model using grid search
-lm_fit <- train(price ~ ., 
-  data = data_train, 
+library(caret)
+# linear model 
+lm_fit <- train(car_standardised, 
+  data = data_training, 
   method = "lm", 
+  #preProcess = "pca",
   trControl = cv <- trainControl(method = "repeatedcv", number = 10, repeats = 5), 
-  tuneGrid = expand.grid(k = seq(2, 25, by = 1)),
+  #tuneGrid = g <- expand.grid(.degree = 1, .nprune = (1:25)),
   metric = "RMSE")
 
 # 
-knn_fit
-ggplot(knn_fit)
+lm_fit
+
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+
+calc_rmse(actual = data_validate$price,
+         predicted = predict(lm_fit, newdata = data_validate))
+
 ```
 
-Upon examining the results of Models 1-7, the addition the explanatory variable 'number of seats' in Model 7 does not change the reported coefficients on the other explanatory variables significantly, when compared to Model 6. Comparing Model 5 and Model 6, the coefficients of the explanatory variables do change significantly with the addition of the dummy variable 'dealership'. When looking at the coefficient on the explanatory variable 'mileage' across all 7 models, one can observe the value change as explanatory varietals are added to the model. In Model 1, the coefficient on 'mileage' appears to be suffering from omitted variable bias, capturing the effects of other variables in the error term and thus biasing this effect of 'mileage' downwards. When consulting the r squared values returned from Models 1-7, the value increases for each additional explanatory value controlled for in the model. The r squared values of Models 5, 6 and 7, are not significantly different from each other.
 
-For these reasons the model that provides a satisfactory level of explanation with the fewest number of variables included in the linear regression is Model 5.
+```{r}
+# set seed for reproducibility
+set.seed(123)
+# standardized 
+car_standardised_pca <- recipe(price ~ ., data = data_training) %>%
+    step_center(all_numeric(), -all_outcomes()) %>%
+    step_scale(all_numeric(), -all_outcomes()) %>% 
+    #preProcess = "pca",
+    step_pca(all_numeric(), -all_outcomes())
+library(caret)
+# linear model 
+lm_fit_pca <- train(car_standardised_pca, 
+  data = data_training, 
+  method = "lm", 
+  trControl = cv <- trainControl(method = "repeatedcv", number = 10, repeats = 5), 
+  metric = "RMSE")
+
+# 
+lm_fit_pca
+
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+
+calc_rmse(actual = data_validate$price,
+         predicted = predict(lm_fit_pca, newdata = data_validate))
+```
+
 
 ## K-Nearest Neighbors Model
 ```{r}
@@ -339,7 +424,7 @@ set.seed(123)
 
 # Tune a knn model using grid search
 knn_fit <- train(price ~ ., 
-  data = data_train, 
+  data = data_training, 
   method = "knn", 
   trControl = cv <- trainControl(method = "repeatedcv", number = 10, repeats = 5), 
   tuneGrid = expand.grid(k = seq(2, 25, by = 1)),
@@ -349,34 +434,176 @@ knn_fit <- train(price ~ .,
 knn_fit
 ggplot(knn_fit)
 
-# K = 4, RMSE = 0.2937813, R^2 = 0.8749051, MAE = 0.2081363
+# K = 5, RMSE = 0.2937813, R^2 = 0.8749051, MAE = 0.2081363
+
+
+calc_rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2))
+}
+
+calc_rmse(actual = data_validate$price,
+         predicted = predict(knn_fit, newdata = data_validate))
+
+#####
+plot(predict(knn_fit, newdata = data_validate))
 
 ```
 
+## Shrinkage Methods
+```{r}
+
+
+#Lasso model
+library(glmnet)
+
+#Using the data in the stroke column of the dataset to use the necessary training data for both X and Y
+#Using training data for both X and Y
+X <- model.matrix(price ~., data_training)[,-1]
+Y <- data_training$price
+# Apply CV lasso regression
+lasso <- cv.glmnet(x = model.matrix(price ~., data_training)[,-1],
+                         y = data_training$price,
+                         alpha = 1)
+
+lasso<-cv.glmnet(x=X, y=Y, alpha=1)
+
+#Selecting the optimal lambda value from which the balance between parsimony and congruence is obtained
+Stroke_data_min_lambda = lasso$lambda.min
+
+Stroke_data_lasso <- glmnet(x=X ,y=Y , alpha = 1, lambda = Stroke_data_min_lambda)
+
+#Using the predicted data to determine which proportion of the population had a stroke, according to the model
+Stroke_data_prediction <- predict(Stroke_data_lasso , s = Stroke_data_min_lambda , newx = X )
+
+#Using the training data, test data and predicted outcomes to compute the SSE, R-squared values and RMSE.
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  
+  data.frame(
+    RMSE = RMSE,
+    Rsquare = R_square
+  )
+  
+}
+
+#Results of the RSME and R-Square calculations
+eval_results(Y , Stroke_data_prediction , X )
+
+#Fitting the lasso model
+fit<-glmnet(x=X, y=Y, alpha=1, lambda=lasso$lambda.1se)
+fit$beta[,1]
+
+#Visualisation of the lasso model
+plot(lasso)
+
+
+
+#Selecting the optimal lambda value from which the balance between parsimony and congruence is obtained
+# ADD NOTES
+min(lasso_model$cvm)
+lasso_model$lambda.min # SEE TEXT BOOK FOR PLOTS
+lasso_model$nzero[lasso_model$lambda == lasso_model$lambda.min] 
+
+#----------------------------------------------------------------------------------
+#ELASTIC NET
+
+# for reproducibility
+set.seed(123)
+
+# grid search across 
+cv_glmnet <- train(
+    x = model.matrix(price ~., data_training)[,-1],
+    y = data_training$price,
+  method = "glmnet",
+  preProc = c("zv", "center", "scale"),
+  trControl = trainControl(method = "cv", number = 10),
+  tuneLength = 10
+)
+
+# results for model with lowest RMSE
+cv_glmnet$results %>% 
+  filter(alpha == cv_glmnet$bestTune$alpha, lambda == cv_glmnet$bestTune$lambda)
+##   alpha     lambda      RMSE  Rsquared        MAE     RMSESD RsquaredSD
+## 1   0.1 0.02007035 0.1277585 0.9001487 0.08102427 0.02235901  0.0346677
+##         MAESD
+## 1 0.005667366
+
+# plot cross-validated RMSE
+ggplot(cv_glmnet)
+
+#---------------------------------------
+
+# results for model with lowest RMSE
+cv_glmnet$results %>%
+  filter(alpha == cv_glmnet$bestTune$alpha, lambda == cv_glmnet$bestTune$lambda)
+
+training_min_lambda = lasso_model$lambda.min
+Stroke_data_lasso <- glmnet(x = model.matrix(price ~., data_training)[,-1],
+                             y = data_training$price,
+                            alpha = 1, lambda = training_min_lambda)
+
+#Using the predicted data to determine which proportion of the population had a stroke, according to the model
+Stroke_data_prediction <- predict(Stroke_data_lasso , s = Stroke_data_min_lambda , newx = X )
+
+#Using the training data, test data and predicted outcomes to compute the SSE, R-squared values and RMSE.
+eval_results <- function(true, predicted, df) {
+  SSE <- sum((predicted - true)^2)
+  SST <- sum((true - mean(true))^2)
+  R_square <- 1 - SSE / SST
+  RMSE = sqrt(SSE/nrow(df))
+  
+  data.frame(
+    RMSE = RMSE,
+    Rsquare = R_square
+  )
+  
+}
+
+#Results of the RSME and R-Square calculations
+eval_results(Y , Stroke_data_prediction , X )
+
+#Fitting the lasso model
+fit<-glmnet(x=X, y=Y, alpha=1, lambda=lasso$lambda.1se)
+fit$beta[,1]
+
+#Visualisation of the lasso model
+plot(lasso)
+
+```
+
+
+
+
 ```{r}
 # Decision Tree
-library(pacman)
-p_load(rpart.plot, rpart)
 library(rpart)
 library(rpart.plot)
+library(ipred)
 
 
 # set seed for reproducibility
 set.seed(123)
 
-
 tree_model <- rpart(
-    formula = price ~ mileage + year + engine + automatic + petrol,
-    data = data_train,
+    formula = price ~ .,
+    data = data_training,
     method = "anova")
 rpart.plot(tree_model)
 
+# INSERT BAGGING MODEL FROM DAIWE NOTES HERE
+
+# train bagged model
+# make bootstrapping reproducible
+set.seed(123)
 
 # train bagged model
 ames_bag1 <- bagging(
   formula = price ~ .,
-  data = data_train,
-  nbagg = 100,  
+  data = data_training,
+  nbagg = 50,  
   coob = TRUE,
   control = rpart.control(minsplit = 2, cp = 0)
 )
@@ -405,8 +632,36 @@ rpart.plot(ctrl)
 rpart.plot(fit)
 
 
+
+
 ```
 
+## Random Forest
+```{r}
+
+library(ranger)
+# number of features
+n_features <- length(setdiff(names(data_training), "price"))
+
+# train a default random forest model
+ames_rf1 <- ranger(
+  price ~ ., 
+  data = data_training,
+  mtry = floor(n_features / 3),
+  respect.unordered.factors = "order",
+  seed = 123
+)
+
+# get OOB RMSE
+(default_rmse <- sqrt(ames_rf1$prediction.error))
+## [1] 24859.27
+
+```
+
+Hypertune Random Forest
+```{r}
 
 
+
+```
 
